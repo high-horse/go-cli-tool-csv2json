@@ -19,7 +19,34 @@ type inputFile struct {
 }
 
 func main() {
+	// handle --help
+	flag.Usage = func() {
+		fmt.Printf("Usage: %s [options] <csvFile>\nOptions:\n", os.Args[0])
+		flag.PrintDefaults()
+	}
 
+	// Getting te file data that was entered
+	fileData, err := getFileData()
+
+	if err != nil {
+		exitGracefully(err)
+	}
+
+	// Validating the file entered
+	if _, err := checkIfValidFile(fileData.filepath); err != nil {
+		exitGracefully(err)
+	}
+
+	// Declare the channels that goroutines are going to use
+	writerCh := make(chan map[string]string)
+	done := make(chan bool)
+
+	// Run both go-routines, the first one responsible for reading and 2nd for writing
+	go processCsvFile(fileData, writerCh)
+	go writeJSONFile(fileData.filepath, writerCh, done, fileData.pretty)
+
+	// waiting for done channel to recieve value, so that we can terminate the program
+	<-done
 }
 
 func check(err error) {
@@ -143,7 +170,7 @@ func writeJSONFile(csvPath string, writerCh <-chan map[string]string, done chan<
 	fmt.Println("Writing JSON file ...")
 
 	// write first character into JSON
-	writeString("[" + breakLine, false)
+	writeString("["+breakLine, false)
 	first := true
 	for {
 		// writing for pushed record into channel
@@ -151,7 +178,7 @@ func writeJSONFile(csvPath string, writerCh <-chan map[string]string, done chan<
 		if more {
 			// break line for 1st record
 			if !first {
-				writeString("," + breakLine, false)
+				writeString(","+breakLine, false)
 			} else {
 				first = false
 			}
@@ -162,7 +189,7 @@ func writeJSONFile(csvPath string, writerCh <-chan map[string]string, done chan<
 			writeString(jsonData, false)
 		} else {
 			// write final character and close line
-			writeString(breakLine + "]", true)
+			writeString(breakLine+"]", true)
 			fmt.Println("Completed!")
 			done <- true
 			break
@@ -170,13 +197,13 @@ func writeJSONFile(csvPath string, writerCh <-chan map[string]string, done chan<
 	}
 }
 
-func getJSONFunc(pretty bool) (func(map[string]string)string, string) {
+func getJSONFunc(pretty bool) (func(map[string]string) string, string) {
 	// declare the variables we are foing to return at end
-	var jsonFunc func(map[string]string)string
+	var jsonFunc func(map[string]string) string
 	var breakLine string
 	if pretty {
 		breakLine = "\n"
-		jsonFunc = func(record map[string]string)string {
+		jsonFunc = func(record map[string]string) string {
 			// By doing this we're ensuring the JSON generated is indented and multi-line
 			jsonData, _ := json.MarshalIndent(record, "	", "	")
 			// Transforming from binary data to string and adding the indent characets to the front
@@ -184,7 +211,7 @@ func getJSONFunc(pretty bool) (func(map[string]string)string, string) {
 		}
 	} else {
 		breakLine = ""
-		jsonFunc = func (record map[string]string) string  {
+		jsonFunc = func(record map[string]string) string {
 			// using the standard Marshal function, which generates JSON without formating
 			jsonData, _ := json.Marshal(record)
 			return string(jsonData)
@@ -193,7 +220,7 @@ func getJSONFunc(pretty bool) (func(map[string]string)string, string) {
 	return jsonFunc, breakLine
 }
 
-func createStringWriter(csvPath string) func(string, bool){
+func createStringWriter(csvPath string) func(string, bool) {
 	// Dir where the csv file is
 	jsonDir := filepath.Dir(csvPath)
 	// Declaring the JSON filename, using the CSV file name as base
@@ -207,7 +234,7 @@ func createStringWriter(csvPath string) func(string, bool){
 
 	// This is the function we want to return, we're going to use it to write the JSON file
 	// 2 arguments: The piece of text we want to write, and whether or not we should close the file
-	return func(data string, close bool)  {
+	return func(data string, close bool) {
 		_, err := f.WriteString(data)
 		check(err)
 

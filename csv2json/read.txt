@@ -11,3 +11,11 @@ Options:
 
 to run test 
 go test -v
+
+to run
+go run csv2json --pretty customers-100.csv
+go run csv2json customers-100.csv
+
+build
+go build csv2json.go
+./csv2json --help
