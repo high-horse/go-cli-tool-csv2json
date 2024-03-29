@@ -5,3 +5,9 @@ Options:
         Generate pretty JSON
   -separator string
         Column separator (default "comma")
+
+
+
+
+to run test 
+go test -v
