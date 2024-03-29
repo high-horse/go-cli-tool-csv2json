@@ -2,12 +2,14 @@ package main
 
 import (
 	"encoding/csv"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type inputFile struct {
@@ -129,4 +131,88 @@ func processLine(headers []string, dataList []string) (map[string]string, error)
 	}
 
 	return recordMap, nil
+}
+
+func writeJSONFile(csvPath string, writerCh <-chan map[string]string, done chan<- bool, pretty bool) {
+	// initialize json writer function
+	writeString := createStringWriter(csvPath)
+	// initialize json parse function and breakline character
+	jsonFunc, breakLine := getJSONFunc(pretty)
+
+	// log info
+	fmt.Println("Writing JSON file ...")
+
+	// write first character into JSON
+	writeString("[" + breakLine, false)
+	first := true
+	for {
+		// writing for pushed record into channel
+		record, more := <-writerCh
+		if more {
+			// break line for 1st record
+			if !first {
+				writeString("," + breakLine, false)
+			} else {
+				first = false
+			}
+
+			// Parse record into json
+			jsonData := jsonFunc(record)
+			// Write JSON string with writetr function
+			writeString(jsonData, false)
+		} else {
+			// write final character and close line
+			writeString(breakLine + "]", true)
+			fmt.Println("Completed!")
+			done <- true
+			break
+		}
+	}
+}
+
+func getJSONFunc(pretty bool) (func(map[string]string)string, string) {
+	// declare the variables we are foing to return at end
+	var jsonFunc func(map[string]string)string
+	var breakLine string
+	if pretty {
+		breakLine = "\n"
+		jsonFunc = func(record map[string]string)string {
+			// By doing this we're ensuring the JSON generated is indented and multi-line
+			jsonData, _ := json.MarshalIndent(record, "	", "	")
+			// Transforming from binary data to string and adding the indent characets to the front
+			return "	" + string(jsonData)
+		}
+	} else {
+		breakLine = ""
+		jsonFunc = func (record map[string]string) string  {
+			// using the standard Marshal function, which generates JSON without formating
+			jsonData, _ := json.Marshal(record)
+			return string(jsonData)
+		}
+	}
+	return jsonFunc, breakLine
+}
+
+func createStringWriter(csvPath string) func(string, bool){
+	// Dir where the csv file is
+	jsonDir := filepath.Dir(csvPath)
+	// Declaring the JSON filename, using the CSV file name as base
+	jsonName := fmt.Sprintf("%s.json", strings.TrimSuffix(filepath.Base(csvPath), ".csv"))
+	// Declaring the JSON file location, using the previous variables as base
+	finalLocation := filepath.Join(jsonDir, jsonName)
+
+	// open json file we want to start writing
+	f, err := os.Create(finalLocation)
+	check(err)
+
+	// This is the function we want to return, we're going to use it to write the JSON file
+	// 2 arguments: The piece of text we want to write, and whether or not we should close the file
+	return func(data string, close bool)  {
+		_, err := f.WriteString(data)
+		check(err)
+
+		if close {
+			f.Close()
+		}
+	}
 }
